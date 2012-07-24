@@ -1,13 +1,23 @@
 namespace eval TclInclude {
 	proc process {infilename outfilename {path {}}} {
-		set indir [file dirname $infilename]
-		set outdir [file dirname $outfilename]
+		if { $infilename == "" } {
+			# read from stdin
+			set in stdin
+			lappend path [pwd]
+		} else {
+			set indir [file dirname $infilename]
+			set in [open $infilename]
+			
+			# add the input file's directory to the path
+			lappend path $indir
+		}
 
-		# add the input file's directory to the path
-		lappend path $indir
-		
-		set in [open $infilename]
-		set out [open $outfilename w]
+
+		if { $outfilename == "" } {
+			set out stdout
+		} else {
+			set out [open $outfilename w]
+		}
 
 		# process each
 		while { ![eof $in] } {
@@ -30,6 +40,26 @@ namespace eval TclInclude {
 		close $in
 		close $out
 
+	}
+
+	proc process_file_handles {infile outfile path} {
+		# process each
+		while { ![eof $in] } {
+			# get the next line
+			set line [gets $in]
+
+			# does the line contain the include tag?
+			if { [regexp {^(\s*)(#\s*)?%{([^\s]*)\s+(.*)}} $line whole_match leading comment cmd args] } {
+				if { [regexp {^[_\s]} $cmd] } {
+					error "ERROR: Cannot call hidden command '$cmd'"
+				}
+
+				eval {TclInclude::Commands::$cmd $out $path $leading $comment} $args
+			} else {	
+				# no include tag
+				puts $out $line
+			}
+		}
 	}
 
 	namespace eval Commands {
@@ -87,4 +117,16 @@ namespace eval TclInclude {
 			error "ERROR in find_file: Cannot find '$filename' in: \n\t[join $normal_paths \n\t]"
 		}
 	}
+}
+
+if { ! $tcl_interactive } {
+	set infile [lindex $argv 0]
+	set outfile [lindex $argv 1]
+	set path {}
+
+	if { [info exists ::env(TCL_INCLUDE_PATH)] } {
+		set path [split $::env(TCL_INCLUDE_PATH) ":"]
+	}
+
+	TclInclude::process $infile $outfile $path
 }
